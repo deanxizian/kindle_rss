@@ -23,6 +23,8 @@ class DigestConfig(BaseModel):
     default_max_items_per_feed: int = Field(default=10, gt=0)
     max_total_articles: int = Field(default=80, gt=0)
     max_epub_mb: int = Field(default=45, gt=0)
+    max_images_per_article: int = Field(default=8, ge=0)
+    max_image_budget_mb: int | None = Field(default=None, gt=0)
     include_feed_health_page: bool = True
 
 

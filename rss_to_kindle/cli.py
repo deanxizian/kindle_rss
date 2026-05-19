@@ -102,7 +102,13 @@ def build(
     cfg = _load_config_or_exit(config)
     digest_date = parse_digest_date(date_value, cfg.digest.timezone)
     state = StateStore()
-    articles = collect_digest_articles(cfg, state=state, include_testing=include_testing, limit=limit)
+    articles = collect_digest_articles(
+        cfg,
+        state=state,
+        include_testing=include_testing,
+        limit=limit,
+        digest_date=digest_date,
+    )
 
     if dry_run:
         typer.echo(f"将收录文章数：{len(articles)}")
@@ -140,7 +146,7 @@ def run(config: Path = typer.Option(Path("feeds.yml"), "--config", "-c")) -> Non
     cfg = _load_config_or_exit(config)
     digest_date = parse_digest_date(None, cfg.digest.timezone)
     state = StateStore()
-    articles = collect_digest_articles(cfg, state=state, include_testing=False)
+    articles = collect_digest_articles(cfg, state=state, include_testing=False, digest_date=digest_date)
     if not articles:
         state.log_delivery(
             digest_date=digest_date.isoformat(),

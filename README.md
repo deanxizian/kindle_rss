@@ -7,9 +7,10 @@
 - 使用 `feeds.yml` 管理订阅源，订阅配置和运行状态分离。
 - 支持 RSS 和 Atom，使用 `feedparser` 解析。
 - 默认只收录 `active` 源，CLI 可选择包含 `testing` 源。
+- 只收录明确带发布时间且落在日报日期当天的文章；没有发布时间的条目会被跳过。
 - 使用 SQLite 保存状态：订阅源健康、文章去重、投递日志。
 - 使用 `trafilatura` 抽取全文，失败后降级使用 RSS content/summary。
-- 使用 `ebooklib` 生成每日一本 EPUB。
+- 使用 `ebooklib` 生成每日一本 EPUB，并尽量下载文章图片嵌入 EPUB。
 - 使用 SMTP 发送 EPUB 附件到 Kindle 邮箱。
 - 提供 CLI 和 GitHub Actions 示例。
 
@@ -55,6 +56,7 @@ feeds:
 - `status=active` 默认参与日报。
 - `status=testing` 默认不投递，可用 `--include-testing` 手动参与构建。
 - `paused`、`archived`、`broken` 不参与默认构建。
+- 文章必须有可解析发布时间，并且按 `digest.timezone` 换算后日期等于日报日期。
 - 未设置 `max_items`、`oldest_hours` 时使用 `digest` 默认值。
 - `include_keywords` 非空时，标题、摘要或正文至少命中一个关键词才收录。
 - `exclude_keywords` 命中时排除。
@@ -78,6 +80,8 @@ export SMTP_USE_TLS=true
 export KINDLE_EMAIL=your-kindle-email@kindle.com
 export SENDER_EMAIL=your-approved-sender@example.com
 ```
+
+发送命令只从环境变量读取 SMTP、Kindle 收件邮箱和发件邮箱。`feeds.yml` 中的 `delivery` 字段用于配置校验和示例说明，不作为发送时的凭据来源。
 
 Amazon Send to Kindle 邮件投递前置条件：
 
@@ -142,6 +146,8 @@ python -m rss_to_kindle.cli build --config feeds.yml --output output/ --include-
 ```bash
 python -m rss_to_kindle.cli build --config feeds.yml --include-testing --dry-run
 ```
+
+图片说明：构建 EPUB 时会尝试下载文章 HTML 中的远程图片，并改写为 EPUB 内部图片资源。默认每篇文章最多保留前 8 张图片，可通过 `digest.max_images_per_article` 调整；全书图片预算默认按 `max_epub_mb` 自动估算，也可用 `digest.max_image_budget_mb` 明确设置。不支持的格式，例如 AVIF，会被跳过。
 
 发送 EPUB 到 Kindle：
 

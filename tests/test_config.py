@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from rss_to_kindle.config import load_config
+from rss_to_kindle.config import load_config, selected_feeds
 
 
 def test_load_example_config() -> None:
@@ -14,6 +14,8 @@ def test_load_example_config() -> None:
     assert config.version == 1
     assert len(config.feeds) == 2
     assert config.feeds[0].id == "ruanyifeng"
+    assert config.digest.max_images_per_article == 8
+    assert config.digest.max_image_budget_mb == 36
 
 
 def test_feed_id_must_be_unique(tmp_path: Path) -> None:
@@ -34,6 +36,24 @@ def test_status_enum_validation(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         load_config(path)
+
+
+def test_selected_feeds_excludes_non_active_statuses_by_default(tmp_path: Path) -> None:
+    data = _base_config()
+    data["feeds"] = [
+        {**data["feeds"][0], "id": "active", "status": "active"},
+        {**data["feeds"][0], "id": "testing", "status": "testing"},
+        {**data["feeds"][0], "id": "paused", "status": "paused"},
+        {**data["feeds"][0], "id": "archived", "status": "archived"},
+        {**data["feeds"][0], "id": "broken", "status": "broken"},
+    ]
+    path = tmp_path / "feeds.yml"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+
+    config = load_config(path)
+
+    assert [feed.id for feed in selected_feeds(config)] == ["active"]
+    assert [feed.id for feed in selected_feeds(config, include_testing=True)] == ["active", "testing"]
 
 
 def _base_config() -> dict:

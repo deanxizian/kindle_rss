@@ -111,6 +111,11 @@ def clean_html(html: str | None, strip_images: bool = False) -> str:
         if tag.name not in ALLOWED_TAGS:
             tag.unwrap()
             continue
+        if tag.name == "img" and not tag.get("src"):
+            for lazy_attr in ("data-src", "data-original", "data-lazy-src", "data-url"):
+                if tag.get(lazy_attr):
+                    tag["src"] = tag[lazy_attr]
+                    break
         allowed_attrs = ALLOWED_ATTRS.get(tag.name, set())
         for attr in list(tag.attrs):
             if attr not in allowed_attrs:

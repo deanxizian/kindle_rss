@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
 
-from rss_to_kindle.config import FeedConfig
-from rss_to_kindle.feed_fetcher import FeedFetcher
-from rss_to_kindle.models import Article
+from rss_to_kindle.config import AppConfig, FeedConfig
+from rss_to_kindle.feed_fetcher import FeedFetcher, collect_digest_articles
+from rss_to_kindle.models import Article, FeedFetchResult
 from rss_to_kindle.state import StateStore
 from rss_to_kindle.utils import article_matches_keywords, compute_article_id, normalize_url
 
@@ -98,3 +98,76 @@ def test_keyword_include_exclude_filtering() -> None:
     assert article_matches_keywords(article.title, article.summary, article.content_html, ["python"], [])
     assert not article_matches_keywords(article.title, article.summary, article.content_html, ["ruby"], [])
     assert not article_matches_keywords(article.title, article.summary, article.content_html, [], ["llm"])
+
+
+def test_collect_digest_articles_requires_known_digest_date(tmp_path: Path) -> None:
+    config = AppConfig.model_validate(
+        {
+            "version": 1,
+            "digest": {
+                "title": "Daily",
+                "language": "zh-CN",
+                "timezone": "Asia/Shanghai",
+                "default_oldest_hours": 24,
+                "default_max_items_per_feed": 10,
+                "max_total_articles": 80,
+                "max_epub_mb": 45,
+                "include_feed_health_page": True,
+            },
+            "delivery": {
+                "kindle_email": "kindle@example.com",
+                "sender_email": "sender@example.com",
+            },
+            "categories": ["Tech"],
+            "feeds": [
+                {
+                    "id": "demo",
+                    "name": "Demo",
+                    "url": "https://example.com/feed.xml",
+                    "category": "Tech",
+                    "status": "active",
+                    "full_text": False,
+                }
+            ],
+        }
+    )
+    articles = [
+        _article("today", "Today", datetime(2026, 5, 18, 16, 30, tzinfo=timezone.utc)),
+        _article("old", "Yesterday", datetime(2026, 5, 18, 15, 59, tzinfo=timezone.utc)),
+        _article("unknown", "Unknown", None),
+    ]
+
+    collected = collect_digest_articles(
+        config,
+        state=StateStore(tmp_path / "state.db"),
+        digest_date=date(2026, 5, 19),
+        fetcher=_DummyFetcher(articles),
+        extractor=object(),
+    )
+
+    assert [article.title for article in collected] == ["Today"]
+
+
+class _DummyFetcher:
+    def __init__(self, articles: list[Article]) -> None:
+        self.articles = articles
+
+    def fetch_feed(self, feed: FeedConfig, state: StateStore | None = None, update_health: bool = True) -> FeedFetchResult:
+        return FeedFetchResult(feed_id=feed.id, feed_name=feed.name, status_code=200, parsed_title=feed.name, articles=self.articles)
+
+
+def _article(article_id: str, title: str, published_at: datetime | None) -> Article:
+    return Article(
+        article_id=article_id,
+        feed_id="demo",
+        feed_name="Demo",
+        category="Tech",
+        feed_priority=50,
+        title=title,
+        url="https://example.com/article",
+        guid=article_id,
+        published_at=published_at,
+        fetched_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
+        summary="summary",
+        content_html="<p>summary</p>",
+    )

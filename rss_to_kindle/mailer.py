@@ -43,7 +43,7 @@ def send_epub(
         _log_failed(state, digest_date, path, article_count, file_size, error)
         raise ValueError(error)
 
-    settings = _smtp_settings(config)
+    settings = _smtp_settings()
     message = EmailMessage()
     message["Subject"] = f"{config.digest.title} - {digest_date.isoformat()}"
     message["From"] = settings["sender_email"]
@@ -79,15 +79,15 @@ def send_epub(
     logger.info("Sent EPUB to Kindle: %s", path)
 
 
-def _smtp_settings(config: AppConfig) -> dict[str, object]:
+def _smtp_settings() -> dict[str, object]:
     settings = {
         "host": os.getenv("SMTP_HOST", ""),
         "port": os.getenv("SMTP_PORT", "587"),
         "user": os.getenv("SMTP_USER", ""),
         "password": os.getenv("SMTP_PASS", ""),
         "use_tls": _env_bool(os.getenv("SMTP_USE_TLS", "true")),
-        "kindle_email": os.getenv("KINDLE_EMAIL") or config.delivery.kindle_email,
-        "sender_email": os.getenv("SENDER_EMAIL") or config.delivery.sender_email,
+        "kindle_email": os.getenv("KINDLE_EMAIL", ""),
+        "sender_email": os.getenv("SENDER_EMAIL", ""),
     }
     missing = [key for key in ("host", "port", "user", "password", "kindle_email", "sender_email") if not settings[key]]
     if missing:

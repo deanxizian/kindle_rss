@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import feedparser
 import httpx
@@ -10,7 +11,7 @@ from .article_extractor import ArticleExtractor, clean_html
 from .config import AppConfig, FeedConfig, selected_feeds
 from .models import Article, FeedFetchResult
 from .state import StateStore
-from .utils import article_matches_keywords, compute_article_id, html_to_text, parse_datetime, utcnow
+from .utils import article_matches_keywords, compute_article_id, html_to_text, parse_datetime, today_in_timezone, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ def collect_digest_articles(
     state: StateStore,
     include_testing: bool = False,
     limit: int | None = None,
+    digest_date: date | None = None,
     extractor: ArticleExtractor | None = None,
     fetcher: FeedFetcher | None = None,
 ) -> list[Article]:
@@ -91,6 +93,7 @@ def collect_digest_articles(
     extractor = extractor or ArticleExtractor()
 
     feeds = selected_feeds(config, include_testing=include_testing)
+    digest_date = digest_date or today_in_timezone(config.digest.timezone)
     articles: list[Article] = []
     failures = 0
     try:
@@ -103,15 +106,14 @@ def collect_digest_articles(
                 continue
 
             max_items = feed.max_items or config.digest.default_max_items_per_feed
-            oldest_hours = feed.oldest_hours or config.digest.default_oldest_hours
-            cutoff = utcnow() - timedelta(hours=oldest_hours)
             kept_for_feed = 0
 
             for article in result.articles:
                 if state.is_article_sent(article.article_id):
                     logger.debug("Skipping already-sent article: %s", article.title)
                     continue
-                if article.published_at and article.published_at < cutoff:
+                if not _is_article_for_digest_date(article, digest_date, config.digest.timezone):
+                    logger.debug("Skipping article outside digest date or without published_at: %s", article.title)
                     continue
 
                 article.content_html = _resolve_article_content(article, feed, extractor)
@@ -155,6 +157,15 @@ def _sort_timestamp(value: datetime | None) -> float:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.timestamp()
+
+
+def _is_article_for_digest_date(article: Article, digest_date: date, timezone_name: str) -> bool:
+    if article.published_at is None:
+        return False
+    published_at = article.published_at
+    if published_at.tzinfo is None:
+        published_at = published_at.replace(tzinfo=timezone.utc)
+    return published_at.astimezone(ZoneInfo(timezone_name)).date() == digest_date
 
 
 def _resolve_article_content(article: Article, feed: FeedConfig, extractor: ArticleExtractor) -> str:

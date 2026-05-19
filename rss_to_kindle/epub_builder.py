@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import mimetypes
+import posixpath
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
+from urllib.parse import urljoin
 
+import httpx
+from bs4 import BeautifulSoup
 from ebooklib import epub
 
 from .article_extractor import clean_html
@@ -25,6 +31,7 @@ def build_epub(
     output: str | Path = "output",
     digest_date: date | None = None,
     feed_health: list[dict[str, object]] | None = None,
+    image_client: httpx.Client | None = None,
 ) -> Path:
     digest_date = digest_date or date.today()
     output_path = _resolve_output_path(Path(output), digest_date)
@@ -33,7 +40,17 @@ def build_epub(
     strip_images = False
 
     while True:
-        _write_epub(current_articles, config, output_path, digest_date, feed_health or [], strip_images=strip_images)
+        _write_epub(
+            current_articles,
+            config,
+            output_path,
+            digest_date,
+            feed_health or [],
+            strip_images=strip_images,
+            image_client=image_client,
+            image_budget_bytes=_image_budget_bytes(max_bytes, config.digest.max_image_budget_mb),
+            max_images_per_article=config.digest.max_images_per_article,
+        )
         size = output_path.stat().st_size
         logger.info("Generated EPUB: %s (%s bytes)", output_path, size)
         if size <= max_bytes:
@@ -70,6 +87,9 @@ def _write_epub(
     digest_date: date,
     feed_health: list[dict[str, object]],
     strip_images: bool,
+    image_client: httpx.Client | None,
+    image_budget_bytes: int,
+    max_images_per_article: int,
 ) -> None:
     title = f"{config.digest.title} - {digest_date.isoformat()}"
     book = epub.EpubBook()
@@ -85,6 +105,15 @@ def _write_epub(
         content=_css().encode("utf-8"),
     )
     book.add_item(css)
+
+    owns_image_client = image_client is None
+    image_client = image_client or httpx.Client(
+        follow_redirects=True,
+        timeout=20.0,
+        headers={"User-Agent": "rss-to-kindle/0.1"},
+    )
+    image_cache: dict[str, str] = {}
+    image_budget_state = {"used": 0, "limit": image_budget_bytes}
 
     cover_page = _make_page(
         title="封面",
@@ -103,18 +132,32 @@ def _write_epub(
 
     article_pages: list[epub.EpubHtml] = []
     used_file_names: set[str] = set()
-    for index, article in enumerate(articles, start=1):
-        file_name = _article_file_name(index, article, used_file_names)
-        body = _article_body(article, config.digest.timezone, strip_images=strip_images)
-        chapter = _make_page(
-            title=article.title,
-            file_name=file_name,
-            body=body,
-            language=config.digest.language,
-            css=css,
-        )
-        article_pages.append(chapter)
-        book.add_item(chapter)
+    try:
+        for index, article in enumerate(articles, start=1):
+            file_name = _article_file_name(index, article, used_file_names)
+            body = _article_body(
+                article,
+                config.digest.timezone,
+                strip_images=strip_images,
+                book=book,
+                image_client=image_client,
+                image_cache=image_cache,
+                image_budget_state=image_budget_state,
+                max_images_per_article=max_images_per_article,
+                article_file_name=file_name,
+            )
+            chapter = _make_page(
+                title=article.title,
+                file_name=file_name,
+                body=body,
+                language=config.digest.language,
+                css=css,
+            )
+            article_pages.append(chapter)
+            book.add_item(chapter)
+    finally:
+        if owns_image_client and image_client:
+            image_client.close()
 
     directory_page = _make_page(
         title="目录",
@@ -151,8 +194,7 @@ def _write_epub(
 
 def _make_page(title: str, file_name: str, body: str, language: str, css: epub.EpubItem) -> epub.EpubHtml:
     page = epub.EpubHtml(title=title, file_name=file_name, lang=language)
-    page.content = f"""<?xml version="1.0" encoding="utf-8"?>
-    <!DOCTYPE html>
+    page.content = f"""<!DOCTYPE html>
     <html xmlns="http://www.w3.org/1999/xhtml" lang="{escape_attr(language)}">
       <head>
         <title>{escape_attr(title)}</title>
@@ -165,8 +207,29 @@ def _make_page(title: str, file_name: str, body: str, language: str, css: epub.E
     return page
 
 
-def _article_body(article: Article, timezone_name: str, strip_images: bool) -> str:
+def _article_body(
+    article: Article,
+    timezone_name: str,
+    strip_images: bool,
+    book: epub.EpubBook,
+    image_client: httpx.Client,
+    image_cache: dict[str, str],
+    image_budget_state: dict[str, int],
+    max_images_per_article: int,
+    article_file_name: str,
+) -> str:
     content = clean_html(article.content_html, strip_images=strip_images)
+    if not strip_images:
+        content = _embed_remote_images(
+            content,
+            base_url=article.url,
+            book=book,
+            image_client=image_client,
+            image_cache=image_cache,
+            image_budget_state=image_budget_state,
+            max_images_per_article=max_images_per_article,
+            article_file_name=article_file_name,
+        )
     original_link = ""
     if article.url:
         original_link = f'<p class="original"><a href="{escape_attr(article.url)}">阅读原文</a></p>'
@@ -178,6 +241,105 @@ def _article_body(article: Article, timezone_name: str, strip_images: bool) -> s
       <div class="content">{content}</div>
     </article>
     """
+
+
+def _embed_remote_images(
+    html: str,
+    base_url: str | None,
+    book: epub.EpubBook,
+    image_client: httpx.Client,
+    image_cache: dict[str, str],
+    image_budget_state: dict[str, int],
+    max_images_per_article: int,
+    article_file_name: str,
+) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    article_dir = posixpath.dirname(article_file_name)
+    embedded_in_article = 0
+
+    for img in list(soup.find_all("img")):
+        if embedded_in_article >= max_images_per_article:
+            img.decompose()
+            continue
+        src = img.get("src")
+        if not src:
+            img.decompose()
+            continue
+        absolute_url = urljoin(base_url or "", src)
+        if not absolute_url.startswith(("http://", "https://")):
+            img.decompose()
+            continue
+
+        image_path = image_cache.get(absolute_url)
+        if image_path is None:
+            downloaded = _download_image(absolute_url, image_client)
+            if downloaded is None:
+                logger.info("Skipping image that could not be embedded: %s", absolute_url)
+                img.decompose()
+                continue
+            data, media_type = downloaded
+            if image_budget_state["used"] + len(data) > image_budget_state["limit"]:
+                logger.info("Skipping image because EPUB image budget is exhausted: %s", absolute_url)
+                img.decompose()
+                continue
+            digest = hashlib.sha256(absolute_url.encode("utf-8")).hexdigest()[:16]
+            extension = _image_extension(media_type, absolute_url)
+            image_path = f"images/{digest}{extension}"
+            book.add_item(
+                epub.EpubItem(
+                    uid=f"image-{digest}",
+                    file_name=image_path,
+                    media_type=media_type,
+                    content=data,
+                )
+            )
+            image_cache[absolute_url] = image_path
+            image_budget_state["used"] += len(data)
+
+        img["src"] = posixpath.relpath(image_path, start=article_dir or ".")
+        embedded_in_article += 1
+
+    return str(soup)
+
+
+def _download_image(url: str, image_client: httpx.Client) -> tuple[bytes, str] | None:
+    try:
+        response = image_client.get(url)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.warning("Failed to download image %s: %s", url, exc)
+        return None
+
+    media_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if not media_type or media_type == "application/octet-stream":
+        guessed_type, _ = mimetypes.guess_type(url)
+        media_type = guessed_type or ""
+    if media_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+        logger.info("Skipping unsupported image type for %s: %s", url, media_type or "unknown")
+        return None
+    if len(response.content) > 5 * 1024 * 1024:
+        logger.warning("Skipping image larger than 5MB: %s", url)
+        return None
+    return response.content, media_type
+
+
+def _image_extension(media_type: str, url: str) -> str:
+    if media_type == "image/jpeg":
+        return ".jpg"
+    if media_type == "image/png":
+        return ".png"
+    if media_type == "image/gif":
+        return ".gif"
+    if media_type == "image/webp":
+        return ".webp"
+    suffix = Path(url).suffix.lower()
+    return suffix if suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else ".img"
+
+
+def _image_budget_bytes(max_epub_bytes: int, configured_budget_mb: int | None) -> int:
+    if configured_budget_mb is not None:
+        return min(configured_budget_mb * 1024 * 1024, int(max_epub_bytes * 0.9))
+    return min(120 * 1024 * 1024, int(max_epub_bytes * 0.8))
 
 
 def _directory_body(

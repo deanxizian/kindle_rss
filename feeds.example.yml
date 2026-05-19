@@ -8,6 +8,8 @@ digest:
   default_max_items_per_feed: 10
   max_total_articles: 80
   max_epub_mb: 45
+  max_images_per_article: 8
+  max_image_budget_mb: 36
   include_feed_health_page: true
 
 delivery:
