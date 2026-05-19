@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -100,7 +100,7 @@ def test_keyword_include_exclude_filtering() -> None:
     assert not article_matches_keywords(article.title, article.summary, article.content_html, [], ["llm"])
 
 
-def test_collect_digest_articles_requires_known_digest_date(tmp_path: Path) -> None:
+def test_collect_digest_articles_filters_past_lookback_window(tmp_path: Path) -> None:
     config = AppConfig.model_validate(
         {
             "version": 1,
@@ -132,20 +132,21 @@ def test_collect_digest_articles_requires_known_digest_date(tmp_path: Path) -> N
         }
     )
     articles = [
-        _article("today", "Today", datetime(2026, 5, 18, 16, 30, tzinfo=timezone.utc)),
-        _article("old", "Yesterday", datetime(2026, 5, 18, 15, 59, tzinfo=timezone.utc)),
+        _article("recent", "Recent", datetime(2026, 5, 18, 22, 30, tzinfo=timezone.utc)),
+        _article("old", "Too Old", datetime(2026, 5, 18, 21, 59, tzinfo=timezone.utc)),
+        _article("future", "Future", datetime(2026, 5, 19, 22, 1, tzinfo=timezone.utc)),
         _article("unknown", "Unknown", None),
     ]
 
     collected = collect_digest_articles(
         config,
         state=StateStore(tmp_path / "state.db"),
-        digest_date=date(2026, 5, 19),
+        window_end=datetime(2026, 5, 19, 22, 0, tzinfo=timezone.utc),
         fetcher=_DummyFetcher(articles),
         extractor=object(),
     )
 
-    assert [article.title for article in collected] == ["Today"]
+    assert [article.title for article in collected] == ["Recent"]
 
 
 class _DummyFetcher:

@@ -7,7 +7,7 @@
 - 使用 `feeds.yml` 管理订阅源，订阅配置和运行状态分离。
 - 支持 RSS 和 Atom，使用 `feedparser` 解析。
 - 默认只收录 `active` 源，CLI 可选择包含 `testing` 源。
-- 只收录明确带发布时间且落在日报日期当天的文章；没有发布时间的条目会被跳过。
+- 只收录明确带发布时间且落在抓取窗口内的文章；默认窗口是运行时刻往前 24 小时，没有发布时间的条目会被跳过。
 - 使用 SQLite 保存状态：订阅源健康、文章去重、投递日志。
 - 使用 `trafilatura` 抽取全文，失败后降级使用 RSS content/summary。
 - 使用 `ebooklib` 生成每日一本 EPUB，并尽量下载文章图片嵌入 EPUB。
@@ -56,7 +56,7 @@ feeds:
 - `status=active` 默认参与日报。
 - `status=testing` 默认不投递，可用 `--include-testing` 手动参与构建。
 - `paused`、`archived`、`broken` 不参与默认构建。
-- 文章必须有可解析发布时间，并且按 `digest.timezone` 换算后日期等于日报日期。
+- 文章必须有可解析发布时间，并且发布时间要落在抓取窗口内；默认窗口是运行时刻往前 `digest.default_oldest_hours` 小时。
 - 未设置 `max_items`、`oldest_hours` 时使用 `digest` 默认值。
 - `include_keywords` 非空时，标题、摘要或正文至少命中一个关键词才收录。
 - `exclude_keywords` 命中时排除。
@@ -135,11 +135,13 @@ python -m rss_to_kindle.cli feed-test ruanyifeng --config feeds.yml
 python -m rss_to_kindle.cli build --config feeds.yml --output output/
 ```
 
-包含 testing 源并指定日期：
+包含 testing 源并指定 EPUB 日期：
 
 ```bash
 python -m rss_to_kindle.cli build --config feeds.yml --output output/ --include-testing --date 2026-05-19
 ```
+
+`--date` 只控制 EPUB 文件名、标题和发送主题中的日期；文章筛选仍按运行时刻往前 `oldest_hours` 小时计算。默认配置下，GitHub Actions 在北京时间 06:00 运行时，会收录过去 24 小时内发布的文章。
 
 只预览将收录的文章，不生成 EPUB：
 
@@ -172,7 +174,7 @@ python -m rss_to_kindle.cli status --config feeds.yml
 `.github/workflows/daily.yml` 提供了每日自动运行示例：
 
 - 支持 `workflow_dispatch` 手动触发。
-- 使用 UTC cron；示例中 `22:00 UTC` 等于北京时间次日 `06:00`。
+- 使用 UTC cron；示例中 `22:00 UTC` 等于北京时间次日 `06:00`，运行时会收录过去 24 小时内发布的文章。
 - 安装依赖后运行 `config-check` 和 `run`。
 - 上传 `output/` 和 `.rss_to_kindle/state.db` 为 artifact。
 

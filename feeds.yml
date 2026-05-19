@@ -84,13 +84,3 @@ feeds:
     priority: 45
     include_keywords: []
     exclude_keywords: []
-
-  - id: "zhihudaily"
-    name: "知乎日报"
-    url: "http://zhihurss.miantiao.me/dailyrss"
-    category: "News"
-    status: "active"
-    full_text: false
-    priority: 40
-    include_keywords: []
-    exclude_keywords: []

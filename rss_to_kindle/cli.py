@@ -94,7 +94,7 @@ def build(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
     include_testing: bool = typer.Option(False, "--include-testing"),
     dry_run: bool = typer.Option(False, "--dry-run"),
-    date_value: str | None = typer.Option(None, "--date", help="日报日期，格式 YYYY-MM-DD"),
+    date_value: str | None = typer.Option(None, "--date", help="EPUB 标题和文件名日期，格式 YYYY-MM-DD"),
     limit: int | None = typer.Option(None, "--limit", min=1),
 ) -> None:
     """抓取文章并构建 EPUB。"""
@@ -107,7 +107,6 @@ def build(
         state=state,
         include_testing=include_testing,
         limit=limit,
-        digest_date=digest_date,
     )
 
     if dry_run:
@@ -146,7 +145,7 @@ def run(config: Path = typer.Option(Path("feeds.yml"), "--config", "-c")) -> Non
     cfg = _load_config_or_exit(config)
     digest_date = parse_digest_date(None, cfg.digest.timezone)
     state = StateStore()
-    articles = collect_digest_articles(cfg, state=state, include_testing=False, digest_date=digest_date)
+    articles = collect_digest_articles(cfg, state=state, include_testing=False)
     if not articles:
         state.log_delivery(
             digest_date=digest_date.isoformat(),
