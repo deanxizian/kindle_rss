@@ -1,0 +1,50 @@
+version: 1
+
+digest:
+  title: "每日 RSS 摘要"
+  language: "zh-CN"
+  timezone: "Asia/Shanghai"
+  default_oldest_hours: 24
+  default_max_items_per_feed: 10
+  max_total_articles: 80
+  max_epub_mb: 45
+  include_feed_health_page: true
+
+delivery:
+  kindle_email: "your-kindle-email@kindle.com"
+  sender_email: "your-approved-sender@example.com"
+
+categories:
+  - Tech
+  - News
+  - Blogs
+  - Other
+
+feeds:
+  - id: "ruanyifeng"
+    name: "阮一峰的网络日志"
+    url: "https://www.ruanyifeng.com/blog/atom.xml"
+    category: "Tech"
+    status: "active"
+    full_text: true
+    max_items: 5
+    oldest_hours: 48
+    priority: 90
+    include_keywords: []
+    exclude_keywords:
+      - "广告"
+      - "招聘"
+
+  - id: "hn"
+    name: "Hacker News"
+    url: "https://hnrss.org/frontpage"
+    category: "Tech"
+    status: "testing"
+    full_text: false
+    max_items: 15
+    priority: 60
+    include_keywords:
+      - "AI"
+      - "Python"
+      - "LLM"
+    exclude_keywords: []
