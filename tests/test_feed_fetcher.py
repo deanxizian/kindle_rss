@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -149,6 +150,26 @@ def test_collect_digest_articles_filters_past_lookback_window(tmp_path: Path) ->
     assert [article.title for article in collected] == ["Recent"]
 
 
+def test_collect_digest_articles_persist_false_does_not_upsert_articles(tmp_path: Path) -> None:
+    config = _config()
+    state = StateStore(tmp_path / "state.db")
+
+    collected = collect_digest_articles(
+        config,
+        state=state,
+        window_end=datetime(2026, 5, 19, 22, 0, tzinfo=timezone.utc),
+        fetcher=_DummyFetcher([_article("recent", "Recent", datetime(2026, 5, 19, 12, 0, tzinfo=timezone.utc))]),
+        extractor=object(),
+        persist=False,
+    )
+
+    with sqlite3.connect(state.path) as connection:
+        article_count = connection.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+
+    assert [article.article_id for article in collected] == ["recent"]
+    assert article_count == 0
+
+
 class _DummyFetcher:
     def __init__(self, articles: list[Article]) -> None:
         self.articles = articles
@@ -171,4 +192,37 @@ def _article(article_id: str, title: str, published_at: datetime | None) -> Arti
         fetched_at=datetime(2026, 5, 19, tzinfo=timezone.utc),
         summary="summary",
         content_html="<p>summary</p>",
+    )
+
+
+def _config() -> AppConfig:
+    return AppConfig.model_validate(
+        {
+            "version": 1,
+            "digest": {
+                "title": "Daily",
+                "language": "zh-CN",
+                "timezone": "Asia/Shanghai",
+                "default_oldest_hours": 24,
+                "default_max_items_per_feed": 10,
+                "max_total_articles": 80,
+                "max_epub_mb": 45,
+                "include_feed_health_page": True,
+            },
+            "delivery": {
+                "kindle_email": "kindle@example.com",
+                "sender_email": "sender@example.com",
+            },
+            "categories": ["Tech"],
+            "feeds": [
+                {
+                    "id": "demo",
+                    "name": "Demo",
+                    "url": "https://example.com/feed.xml",
+                    "category": "Tech",
+                    "status": "active",
+                    "full_text": False,
+                }
+            ],
+        }
     )

@@ -86,6 +86,7 @@ def collect_digest_articles(
     window_end: datetime | None = None,
     extractor: ArticleExtractor | None = None,
     fetcher: FeedFetcher | None = None,
+    persist: bool = True,
 ) -> list[Article]:
     own_fetcher = fetcher is None
     own_extractor = extractor is None
@@ -131,7 +132,8 @@ def collect_digest_articles(
                 ):
                     continue
 
-                state.upsert_article(article, status="fetched")
+                if persist:
+                    state.upsert_article(article, status="fetched")
                 articles.append(article)
                 kept_for_feed += 1
                 if kept_for_feed >= max_items:

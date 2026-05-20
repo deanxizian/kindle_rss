@@ -14,7 +14,7 @@ jobs:
       SMTP_PORT: ${{ secrets.SMTP_PORT }}
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASS: ${{ secrets.SMTP_PASS }}
-      SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+      SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS || 'true' }}
       KINDLE_EMAIL: ${{ secrets.KINDLE_EMAIL }}
       SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
       RSS2KINDLE_STATE_DB: .rss_to_kindle/state.db
@@ -22,6 +22,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Prepare state directory
+        run: mkdir -p .rss_to_kindle
+
+      - name: Restore state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .rss_to_kindle/state.db
+          key: rss-to-kindle-state-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            rss-to-kindle-state-${{ github.ref_name }}-
+            rss-to-kindle-state-
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -38,6 +50,13 @@ jobs:
 
       - name: Run digest
         run: python -m rss_to_kindle.cli run --config feeds.yml
+
+      - name: Save state cache
+        uses: actions/cache/save@v4
+        if: always() && hashFiles('.rss_to_kindle/state.db') != ''
+        with:
+          path: .rss_to_kindle/state.db
+          key: rss-to-kindle-state-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload output
         uses: actions/upload-artifact@v7

@@ -107,6 +107,7 @@ def build(
         state=state,
         include_testing=include_testing,
         limit=limit,
+        persist=not dry_run,
     )
 
     if dry_run:
@@ -115,9 +116,9 @@ def build(
             typer.echo(f"- [{article.category}] {article.feed_name}: {article.title}")
         return
 
-    epub_path = build_epub(articles, cfg, output=output, digest_date=digest_date, feed_health=state.get_feed_states())
-    manifest_path = write_manifest(epub_path, digest_date, [article.article_id for article in articles])
-    typer.echo(f"EPUB: {epub_path}")
+    result = build_epub(articles, cfg, output=output, digest_date=digest_date, feed_health=state.get_feed_states())
+    manifest_path = write_manifest(result.epub_path, digest_date, result.article_ids)
+    typer.echo(f"EPUB: {result.epub_path}")
     typer.echo(f"Manifest: {manifest_path}")
 
 
@@ -158,17 +159,17 @@ def run(config: Path = typer.Option(Path("feeds.yml"), "--config", "-c")) -> Non
         typer.echo("没有新文章，跳过生成和发送。")
         return
 
-    epub_path = build_epub(articles, cfg, output=Path("output"), digest_date=digest_date, feed_health=state.get_feed_states())
-    write_manifest(epub_path, digest_date, [article.article_id for article in articles])
+    result = build_epub(articles, cfg, output=Path("output"), digest_date=digest_date, feed_health=state.get_feed_states())
+    write_manifest(result.epub_path, digest_date, result.article_ids)
     send_epub(
-        epub_path,
+        result.epub_path,
         cfg,
         state=state,
-        article_ids=[article.article_id for article in articles],
+        article_ids=result.article_ids,
         digest_date=digest_date,
-        article_count=len(articles),
+        article_count=result.article_count,
     )
-    typer.echo(f"完成：{epub_path}")
+    typer.echo(f"完成：{result.epub_path}")
 
 
 @app.command("status")

@@ -85,7 +85,7 @@ def _smtp_settings() -> dict[str, object]:
         "port": os.getenv("SMTP_PORT", "587"),
         "user": os.getenv("SMTP_USER", ""),
         "password": os.getenv("SMTP_PASS", ""),
-        "use_tls": _env_bool(os.getenv("SMTP_USE_TLS", "true")),
+        "use_tls": _env_bool(os.getenv("SMTP_USE_TLS") or "true"),
         "kindle_email": os.getenv("KINDLE_EMAIL", ""),
         "sender_email": os.getenv("SENDER_EMAIL", ""),
     }

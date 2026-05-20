@@ -34,3 +34,17 @@ def test_smtp_settings_read_delivery_addresses_from_env(monkeypatch) -> None:
     assert settings["kindle_email"] == "kindle@example.com"
     assert settings["sender_email"] == "sender@example.com"
     assert settings["use_tls"] is False
+
+
+def test_smtp_use_tls_empty_string_defaults_to_true(monkeypatch) -> None:
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "user@example.com")
+    monkeypatch.setenv("SMTP_PASS", "secret")
+    monkeypatch.setenv("SMTP_USE_TLS", "")
+    monkeypatch.setenv("KINDLE_EMAIL", "kindle@example.com")
+    monkeypatch.setenv("SENDER_EMAIL", "sender@example.com")
+
+    settings = _smtp_settings()
+
+    assert settings["use_tls"] is True

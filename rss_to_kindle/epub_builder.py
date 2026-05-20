@@ -5,6 +5,7 @@ import logging
 import mimetypes
 import posixpath
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from urllib.parse import urljoin
@@ -25,6 +26,13 @@ class EpubSizeError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class BuildResult:
+    epub_path: Path
+    article_ids: list[str]
+    article_count: int
+
+
 def build_epub(
     articles: list[Article],
     config: AppConfig,
@@ -32,7 +40,7 @@ def build_epub(
     digest_date: date | None = None,
     feed_health: list[dict[str, object]] | None = None,
     image_client: httpx.Client | None = None,
-) -> Path:
+) -> BuildResult:
     digest_date = digest_date or date.today()
     output_path = _resolve_output_path(Path(output), digest_date)
     max_bytes = config.digest.max_epub_mb * 1024 * 1024
@@ -54,7 +62,8 @@ def build_epub(
         size = output_path.stat().st_size
         logger.info("Generated EPUB: %s (%s bytes)", output_path, size)
         if size <= max_bytes:
-            return output_path
+            article_ids = [article.article_id for article in current_articles]
+            return BuildResult(epub_path=output_path, article_ids=article_ids, article_count=len(article_ids))
 
         if not strip_images:
             logger.warning("EPUB is larger than %s MB; rebuilding without images", config.digest.max_epub_mb)
@@ -194,16 +203,17 @@ def _write_epub(
 
 def _make_page(title: str, file_name: str, body: str, language: str, css: epub.EpubItem) -> epub.EpubHtml:
     page = epub.EpubHtml(title=title, file_name=file_name, lang=language)
+    page_dir = posixpath.dirname(file_name) or "."
+    css_href = posixpath.relpath("style/main.css", start=page_dir)
     page.content = f"""<!DOCTYPE html>
     <html xmlns="http://www.w3.org/1999/xhtml" lang="{escape_attr(language)}">
       <head>
         <title>{escape_attr(title)}</title>
-        <link rel="stylesheet" type="text/css" href="style/main.css" />
       </head>
       <body>{body}</body>
     </html>
     """
-    page.add_item(css)
+    page.add_link(href=css_href, rel="stylesheet", type="text/css")
     return page
 
 
