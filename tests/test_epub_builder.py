@@ -9,7 +9,7 @@ from ebooklib import epub
 
 import rss_to_kindle.epub_builder as epub_builder
 from rss_to_kindle.config import load_config
-from rss_to_kindle.epub_builder import build_epub
+from rss_to_kindle.epub_builder import build_epub, _download_image
 from rss_to_kindle.models import Article
 
 
@@ -89,6 +89,21 @@ def test_epub_builder_result_tracks_articles_after_size_reduction(tmp_path: Path
 
     assert result.article_ids == ["short"]
     assert result.article_count == 1
+
+
+def test_download_image_skips_images_larger_than_3mb() -> None:
+    image_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                headers={"content-type": "image/jpeg"},
+                content=b"x" * (3 * 1024 * 1024 + 1),
+                request=request,
+            )
+        )
+    )
+
+    assert _download_image("https://example.com/large.jpg", image_client, max_image_bytes=3 * 1024 * 1024) is None
 
 
 def archive_name_suffix(name: str) -> str:

@@ -14,8 +14,10 @@ def test_load_example_config() -> None:
     assert config.version == 1
     assert len(config.feeds) == 2
     assert config.feeds[0].id == "ruanyifeng"
+    assert config.digest.max_epub_mb == 20
     assert config.digest.max_images_per_article == 8
-    assert config.digest.max_image_budget_mb == 36
+    assert config.digest.max_image_budget_mb == 15
+    assert config.digest.max_single_image_mb == 3
 
 
 def test_feed_id_must_be_unique(tmp_path: Path) -> None:

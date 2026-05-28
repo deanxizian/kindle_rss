@@ -58,6 +58,7 @@ def build_epub(
             image_client=image_client,
             image_budget_bytes=_image_budget_bytes(max_bytes, config.digest.max_image_budget_mb),
             max_images_per_article=config.digest.max_images_per_article,
+            max_single_image_bytes=config.digest.max_single_image_mb * 1024 * 1024,
         )
         size = output_path.stat().st_size
         logger.info("Generated EPUB: %s (%s bytes)", output_path, size)
@@ -99,6 +100,7 @@ def _write_epub(
     image_client: httpx.Client | None,
     image_budget_bytes: int,
     max_images_per_article: int,
+    max_single_image_bytes: int,
 ) -> None:
     title = f"{config.digest.title} - {digest_date.isoformat()}"
     book = epub.EpubBook()
@@ -153,6 +155,7 @@ def _write_epub(
                 image_cache=image_cache,
                 image_budget_state=image_budget_state,
                 max_images_per_article=max_images_per_article,
+                max_single_image_bytes=max_single_image_bytes,
                 article_file_name=file_name,
             )
             chapter = _make_page(
@@ -226,6 +229,7 @@ def _article_body(
     image_cache: dict[str, str],
     image_budget_state: dict[str, int],
     max_images_per_article: int,
+    max_single_image_bytes: int,
     article_file_name: str,
 ) -> str:
     content = clean_html(article.content_html, strip_images=strip_images)
@@ -238,6 +242,7 @@ def _article_body(
             image_cache=image_cache,
             image_budget_state=image_budget_state,
             max_images_per_article=max_images_per_article,
+            max_single_image_bytes=max_single_image_bytes,
             article_file_name=article_file_name,
         )
     original_link = ""
@@ -261,6 +266,7 @@ def _embed_remote_images(
     image_cache: dict[str, str],
     image_budget_state: dict[str, int],
     max_images_per_article: int,
+    max_single_image_bytes: int,
     article_file_name: str,
 ) -> str:
     soup = BeautifulSoup(html, "html.parser")
@@ -282,7 +288,7 @@ def _embed_remote_images(
 
         image_path = image_cache.get(absolute_url)
         if image_path is None:
-            downloaded = _download_image(absolute_url, image_client)
+            downloaded = _download_image(absolute_url, image_client, max_image_bytes=max_single_image_bytes)
             if downloaded is None:
                 logger.info("Skipping image that could not be embedded: %s", absolute_url)
                 img.decompose()
@@ -312,7 +318,7 @@ def _embed_remote_images(
     return str(soup)
 
 
-def _download_image(url: str, image_client: httpx.Client) -> tuple[bytes, str] | None:
+def _download_image(url: str, image_client: httpx.Client, max_image_bytes: int) -> tuple[bytes, str] | None:
     try:
         response = image_client.get(url)
         response.raise_for_status()
@@ -327,8 +333,9 @@ def _download_image(url: str, image_client: httpx.Client) -> tuple[bytes, str] |
     if media_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
         logger.info("Skipping unsupported image type for %s: %s", url, media_type or "unknown")
         return None
-    if len(response.content) > 5 * 1024 * 1024:
-        logger.warning("Skipping image larger than 5MB: %s", url)
+    if len(response.content) > max_image_bytes:
+        max_image_mb = max_image_bytes / 1024 / 1024
+        logger.warning("Skipping image larger than %.1fMB: %s", max_image_mb, url)
         return None
     return response.content, media_type
 

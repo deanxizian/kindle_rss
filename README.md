@@ -15,6 +15,12 @@ cp feeds.example.yml feeds.yml
 编辑 `feeds.yml`：
 
 ```yaml
+digest:
+  max_epub_mb: 20
+  max_images_per_article: 8
+  max_image_budget_mb: 15
+  max_single_image_mb: 3
+
 feeds:
   - id: "example"
     name: "Example Feed"

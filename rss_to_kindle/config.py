@@ -25,6 +25,7 @@ class DigestConfig(BaseModel):
     max_epub_mb: int = Field(default=45, gt=0)
     max_images_per_article: int = Field(default=8, ge=0)
     max_image_budget_mb: int | None = Field(default=None, gt=0)
+    max_single_image_mb: int = Field(default=3, gt=0)
     include_feed_health_page: bool = True
 
 
