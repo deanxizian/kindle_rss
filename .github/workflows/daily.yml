@@ -27,7 +27,7 @@ jobs:
         run: mkdir -p .rss_to_kindle
 
       - name: Restore state cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .rss_to_kindle/state.db
           key: rss-to-kindle-state-${{ github.ref_name }}-${{ github.run_id }}
@@ -52,7 +52,7 @@ jobs:
         run: python -m rss_to_kindle.cli run --config feeds.yml
 
       - name: Save state cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         if: always() && hashFiles('.rss_to_kindle/state.db') != ''
         with:
           path: .rss_to_kindle/state.db
